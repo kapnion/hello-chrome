@@ -4,13 +4,18 @@
     "version": "1.0",
     "description": "A simple Chrome extension.",
     "background": {
-      "service_worker": "background.js"
+        "service_worker": "background.js"
     },
+    "host_permissions": [
+        "http://*/*",
+        "https://*/*"
+    ],
     "action": {
-      "default_popup": "popup.html"
+        "default_popup": "popup.html"
     },
     "permissions": [
-      "activeTab",
-      "scripting"
+        "activeTab",
+        "scripting",
+        "tabs"
     ]
-  }
+}
