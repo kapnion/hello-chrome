@@ -13,36 +13,43 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
             chrome.scripting.executeScript({
                 target: { tabId: tabId },
-                func: () => {
-                    const htmlContent = document.documentElement.outerHTML;
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(htmlContent, 'text/html');
-                    // Remove script and style elements
-                    doc.querySelectorAll('script, style').forEach(el => el.remove());
-                    let textContent = doc.body.innerText.trim(); // Return only the text content
-                    textContent = textContent.replace(/\s\s+/g, ' '); // Replace multiple spaces with a single space
-                    textContent = textContent.replace(/^\s*[\r\n]/gm, ''); // Remove empty lines
-                    textContent = textContent.replace(/\n/g, ' '); // Replace new lines with spaces
-                    return textContent;
-                }
+                files: ['contentScript.js']
             }, async (results) => {
                 try {
                     if (results && results[0] && results[0].result) {
-                        const textContent = results[0].result;
-                        if (textContent) {
-                            if (!aiSession || aiSession.tokensLeft < 1000) { // Check if session exists and has enough tokens
-                                if (aiSession) {
-                                    await aiSession.destroy(); // Terminate the existing session
+                        const elementsTextContent = results[0].result;
+                        chrome.storage.sync.get(['tags', 'action'], async (result) => {
+                            const { tags, action } = result;
+                            if (tags && action) {
+                                if (!aiSession || aiSession.tokensLeft < 1000) { // Check if session exists and has enough tokens
+                                    if (aiSession) {
+                                        await aiSession.destroy(); // Terminate the existing session
+                                    }
+                                    aiSession = await ai.languageModel.create({
+                                        systemPrompt: `You will receive plain text extracted from a webpage. Check if the content contains any forbidden tags and provide a summary.`
+                                    });
                                 }
-                                aiSession = await ai.languageModel.create({
-                                    systemPrompt: `You will receive plain text extracted from a webpage. Try to extract user tasks from the text, provide meaningful descriptions, and prioritize them.`
-                                });
+                                for (const textContent of elementsTextContent) {
+                                    const promptText = `Might this content contain text about ${tags.join(", ")}: ${textContent}?`;
+                                    const aiResult = await aiSession.prompt(promptText);
+                                    if (aiResult.includes('yes')) {
+                                        const elements = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, a'));
+                                        const el = elements[elementsTextContent.indexOf(textContent)];
+                                        if (el) {
+                                            if (action === 'blur') {
+                                                el.style.filter = 'blur(5px)';
+                                            } else if (action === 'remove') {
+                                                el.remove();
+                                            } else if (action === 'highlight') {
+                                                el.classList.add('highlight');
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                console.log('No tags or action specified.');
                             }
-                            const result = await aiSession.prompt(textContent);
-                            console.log(result);
-                        } else {
-                            console.log('Empty site, skipping...');
-                        }
+                        });
                     }
                 } catch (error) {
                     console.error('Error during HTML content processing:', error);
